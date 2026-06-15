@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Preorders Dashboard — NM-preorder</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --panel2: #1f232c; --line: #2a2f3a;
+    --txt: #e8eaed; --muted: #9aa3b2; --accent: #4f8cff; --accent2:#22c55e;
+    --warn:#f59e0b; --bad:#ef4444; --chip:#262b35;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    padding: 18px 22px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    background: linear-gradient(180deg, #14171d, #0f1115);
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; letter-spacing:.2px; }
+  header .tag { background: var(--chip); color: var(--accent); padding: 2px 8px;
+    border-radius: 999px; font-size: 12px; font-weight:600; }
+  .spacer { flex: 1; }
+  .updated { color: var(--muted); font-size: 12px; }
+  .wrap { padding: 18px 22px 60px; }
+  .controls {
+    display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .ctl label { display:block; color: var(--muted); font-size: 11px; text-transform: uppercase;
+    letter-spacing:.6px; margin-bottom: 5px; }
+  input[type="date"], input[type="search"], select {
+    background: var(--panel2); border: 1px solid var(--line); color: var(--txt);
+    padding: 8px 10px; border-radius: 8px; font-size: 14px; outline: none;
+  }
+  input[type="search"]{ min-width: 240px; }
+  button {
+    background: var(--accent); color: #fff; border: 0; padding: 9px 14px;
+    border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button.secondary { background: var(--panel2); border: 1px solid var(--line); color: var(--txt); }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { opacity:.5; cursor: default; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr));
+    gap: 12px; margin-bottom: 18px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .card .k { color: var(--muted); font-size: 12px; }
+  .card .v { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .tablewrap { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { position: sticky; top: 0; background: var(--panel2); color: var(--muted);
+    font-weight: 600; cursor: pointer; user-select: none; z-index: 1; }
+  th .arrow { color: var(--accent); font-size: 11px; }
+  tbody tr:hover { background: #1b1f27; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pill { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight:600; }
+  .f-fulfilled { background: rgba(34,197,94,.15); color: var(--accent2); }
+  .f-unfulfilled { background: rgba(245,158,11,.15); color: var(--warn); }
+  .f-partial { background: rgba(79,140,255,.15); color: var(--accent); }
+  .inv-neg { color: var(--bad); font-weight: 700; }
+  .inv-zero { color: var(--warn); font-weight: 600; }
+  .order-start td { border-top: 2px solid #313747; }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  .muted { color: var(--muted); }
+  .err { background: rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.4);
+    color:#fca5a5; padding:12px 14px; border-radius:10px; margin-bottom:16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Preorders Dashboard</h1>
+  <span class="tag" id="tagChip">NM-preorder</span>
+  <div class="spacer"></div>
+  <div class="updated" id="updated">Loading…</div>
+</header>
+
+<div class="wrap">
+  <div id="errBox"></div>
+
+  <div class="controls">
+    <div class="ctl">
+      <label>Date (by order created)</label>
+      <input type="date" id="datePick" />
+    </div>
+    <div class="ctl">
+      <label>&nbsp;</label>
+      <button class="secondary" id="allDates">All dates</button>
+    </div>
+    <div class="ctl">
+      <label>&nbsp;</label>
+      <button class="secondary" id="today">Today</button>
+    </div>
+    <div class="ctl">
+      <label>Search (order, product, SKU)</label>
+      <input type="search" id="search" placeholder="Type to filter…" />
+    </div>
+    <div class="ctl">
+      <label>Fulfillment</label>
+      <select id="fulFilter">
+        <option value="">All</option>
+        <option value="unfulfilled">Unfulfilled</option>
+        <option value="partial">Partial</option>
+        <option value="fulfilled">Fulfilled</option>
+      </select>
+    </div>
+    <div class="spacer"></div>
+    <div class="ctl">
+      <label>&nbsp;</label>
+      <button id="refresh">↻ Refresh</button>
+    </div>
+    <div class="ctl">
+      <label>&nbsp;</label>
+      <button class="secondary" id="exportCsv">Export CSV</button>
+    </div>
+    <div class="ctl">
+      <label>&nbsp;</label>
+      <button class="secondary" id="exportXlsx">Export Excel</button>
+    </div>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="tablewrap">
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th data-k="name">Name</th>
+          <th data-k="subtotal" class="num">Subtotal</th>
+          <th data-k="createdAt">Created at</th>
+          <th data-k="quantity" class="num">Lineitem qty</th>
+          <th data-k="lineitemName">Lineitem name</th>
+          <th data-k="lineitemPrice" class="num">Lineitem price</th>
+          <th data-k="sku">Lineitem SKU</th>
+          <th data-k="fulfillmentStatus">Fulfillment</th>
+          <th data-k="inventory" class="num">Inventory</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="empty" id="empty" style="display:none">No preorders match the current filters.</div>
+  </div>
+</div>
+
+<script>
+const DATA_URL = "data/preorders.json";
+let RAW = null;
+let sortKey = "createdAt", sortDir = -1;
+
+const $ = (id) => document.getElementById(id);
+
+function fmtMoney(v, cur) {
+  if (v === "" || v === null || v === undefined) return "";
+  const n = Number(v);
+  if (Number.isNaN(n)) return v;
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: cur || "USD" }).format(n);
+}
+function fmtDateTime(iso) {
+  if (!iso) return "";
+  const tz = (RAW && RAW.timezone) || "America/New_York";
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, year: "numeric", month: "short", day: "2-digit",
+      hour: "2-digit", minute: "2-digit"
+    }).format(new Date(iso));
+  } catch { return iso; }
+}
+
+async function load(bustCache) {
+  $("errBox").innerHTML = "";
+  try {
+    const url = bustCache ? `${DATA_URL}?t=${Date.now()}` : DATA_URL;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Could not load ${DATA_URL} (HTTP ${res.status})`);
+    RAW = await res.json();
+    $("tagChip").textContent = RAW.tag || "NM-preorder";
+    const gen = RAW.generatedAt ? fmtDateTime(RAW.generatedAt) : "unknown";
+    $("updated").textContent = `Last updated: ${gen}  ·  ${RAW.orderCount} orders / ${RAW.rowCount} items`;
+    render();
+  } catch (e) {
+    $("errBox").innerHTML = `<div class="err">${e.message}. ` +
+      `If you just deployed, run the "Fetch preorders" GitHub Action once to generate the data file.</div>`;
+    $("updated").textContent = "No data loaded";
+  }
+}
+
+function currentRows() {
+  if (!RAW || !RAW.rows) return [];
+  let rows = RAW.rows.slice();
+  const d = $("datePick").value;
+  if (d) rows = rows.filter(r => r.orderDate === d);
+  const ful = $("fulFilter").value;
+  if (ful) rows = rows.filter(r => r.fulfillmentStatus === ful);
+  const q = $("search").value.trim().toLowerCase();
+  if (q) rows = rows.filter(r =>
+    (r.name||"").toLowerCase().includes(q) ||
+    (r.lineitemName||"").toLowerCase().includes(q) ||
+    (r.sku||"").toLowerCase().includes(q));
+  rows.sort((a,b) => {
+    let x = a[sortKey], y = b[sortKey];
+    if (["subtotal","quantity","lineitemPrice","inventory"].includes(sortKey)) {
+      x = Number(x); y = Number(y);
+      if (Number.isNaN(x)) x = -Infinity; if (Number.isNaN(y)) y = -Infinity;
+    } else { x = (x||"").toString(); y = (y||"").toString(); }
+    return x < y ? -sortDir : x > y ? sortDir : 0;
+  });
+  return rows;
+}
+
+function render() {
+  const rows = currentRows();
+  const tb = $("tbody");
+  tb.innerHTML = "";
+  $("empty").style.display = rows.length ? "none" : "block";
+
+  const orders = new Set(), skus = new Set();
+  let units = 0, subtotalSum = 0, unfulfilled = 0;
+  const seenOrderForSubtotal = new Set();
+
+  let prevName = null;
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    if (r.name !== prevName) tr.className = "order-start";
+    prevName = r.name;
+    const inv = r.inventory;
+    const invClass = inv === "" ? "" : (Number(inv) < 0 ? "inv-neg" : (Number(inv) === 0 ? "inv-zero" : ""));
+    tr.innerHTML = `
+      <td>#${r.name}</td>
+      <td class="num">${fmtMoney(r.subtotal, r.currency)}</td>
+      <td>${fmtDateTime(r.createdAt)}</td>
+      <td class="num">${r.quantity}</td>
+      <td>${escapeHtml(r.lineitemName)}</td>
+      <td class="num">${fmtMoney(r.lineitemPrice, r.currency)}</td>
+      <td>${escapeHtml(r.sku)}</td>
+      <td><span class="pill f-${r.fulfillmentStatus}">${r.fulfillmentStatus||""}</span></td>
+      <td class="num ${invClass}">${inv}</td>`;
+    tb.appendChild(tr);
+
+    orders.add(r.name);
+    if (r.sku) skus.add(r.sku);
+    units += Number(r.quantity) || 0;
+    if (!seenOrderForSubtotal.has(r.name)) {
+      seenOrderForSubtotal.add(r.name);
+      subtotalSum += Number(r.subtotal) || 0;
+    }
+    if (r.fulfillmentStatus === "unfulfilled") unfulfilled++;
+  }
+
+  const cur = (RAW.rows[0] && RAW.rows[0].currency) || "USD";
+  $("cards").innerHTML = `
+    ${card("Preorders", orders.size)}
+    ${card("Line items", rows.length)}
+    ${card("Units", units)}
+    ${card("Subtotal value", fmtMoney(subtotalSum, cur))}
+    ${card("Unique SKUs", skus.size)}
+    ${card("Unfulfilled lines", unfulfilled)}`;
+
+  document.querySelectorAll("th").forEach(th => {
+    const arrow = th.dataset.k === sortKey ? ` <span class="arrow">${sortDir>0?"▲":"▼"}</span>` : "";
+    th.innerHTML = th.textContent.replace(/[▲▼]/g,"").trim() + arrow;
+  });
+}
+function card(k,v){ return `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`; }
+function escapeHtml(s){ return (s==null?"":String(s)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// Export — matches the uploaded sheet's column order/headers exactly.
+const EXPORT_COLS = [
+  ["Name", "name"], ["Subtotal", "subtotal"], ["Created at", "createdAt"],
+  ["Lineitem quantity", "quantity"], ["Lineitem name", "lineitemName"],
+  ["Lineitem price", "lineitemPrice"], ["Lineitem sku", "sku"],
+  ["Lineitem fulfillment status", "fulfillmentStatus"], ["Inventory", "inventory"],
+];
+function exportMatrix() {
+  const rows = currentRows();
+  const header = EXPORT_COLS.map(c => c[0]);
+  const body = rows.map(r => EXPORT_COLS.map(c => r[c[1]] ?? ""));
+  return [header, ...body];
+}
+function exportName(ext) {
+  const d = $("datePick").value || "all-dates";
+  return `preorders_${(RAW.tag||"NM-preorder")}_${d}.${ext}`;
+}
+function exportCsv() {
+  const m = exportMatrix();
+  const csv = m.map(row => row.map(cell => {
+    const s = String(cell ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  }).join(",")).join("\n");
+  downloadBlob(new Blob([csv], {type:"text/csv;charset=utf-8;"}), exportName("csv"));
+}
+function exportXlsx() {
+  const ws = XLSX.utils.aoa_to_sheet(exportMatrix());
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Preorders");
+  XLSX.writeFile(wb, exportName("xlsx"));
+}
+function downloadBlob(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// Wire up
+$("datePick").addEventListener("change", render);
+$("allDates").addEventListener("click", () => { $("datePick").value = ""; render(); });
+$("today").addEventListener("click", () => {
+  const tz = (RAW && RAW.timezone) || "America/New_York";
+  const parts = new Intl.DateTimeFormat("en-CA",{timeZone:tz,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+  const g = t => parts.find(p=>p.type===t).value;
+  $("datePick").value = `${g("year")}-${g("month")}-${g("day")}`;
+  render();
+});
+$("search").addEventListener("input", render);
+$("fulFilter").addEventListener("change", render);
+$("refresh").addEventListener("click", async (e) => {
+  e.target.disabled = true; e.target.textContent = "Refreshing…";
+  await load(true);
+  e.target.disabled = false; e.target.textContent = "↻ Refresh";
+});
+$("exportCsv").addEventListener("click", exportCsv);
+$("exportXlsx").addEventListener("click", exportXlsx);
+document.querySelectorAll("th").forEach(th => th.addEventListener("click", () => {
+  const k = th.dataset.k;
+  if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = 1; }
+  render();
+}));
+
+// Auto-refresh the JSON every 5 min so the open tab tracks the hourly rebuild.
+setInterval(() => load(true), 5 * 60 * 1000);
+
+load(false);
+</script>
+</body>
+</html>

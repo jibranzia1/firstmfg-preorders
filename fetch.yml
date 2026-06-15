@@ -1,0 +1,49 @@
+name: Fetch preorders
+
+on:
+  schedule:
+    - cron: "0 * * * *"      # top of every hour (UTC)
+  workflow_dispatch: {}        # lets you run it on-demand from the Actions tab
+  repository_dispatch:         # optional: trigger from a Shopify webhook relay
+    types: [shopify-order]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fetch-preorders
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch Shopify preorders
+        env:
+          SHOPIFY_STORE: ${{ secrets.SHOPIFY_STORE }}
+          SHOPIFY_TOKEN: ${{ secrets.SHOPIFY_TOKEN }}
+          ORDER_TAG: ${{ vars.ORDER_TAG || 'NM-preorder' }}
+          API_VERSION: ${{ vars.API_VERSION || '2025-07' }}
+          DAYS: ${{ vars.DAYS || '365' }}
+          STORE_TZ: ${{ vars.STORE_TZ || 'America/New_York' }}
+        run: node fetch.js
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/preorders.json
+          if git diff --staged --quiet; then
+            echo "No changes."
+          else
+            git commit -m "data: refresh preorders ($(date -u +%Y-%m-%dT%H:%MZ))"
+            git push
+          fi
